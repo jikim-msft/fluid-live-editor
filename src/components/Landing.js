@@ -15,38 +15,64 @@ import CustomInput from "./CustomInput";
 import OutputDetails from "./OutputDetails";
 import ThemeDropdown from "./ThemeDropdown";
 import LanguagesDropdown from "./LanguagesDropdown";
+import { TinyliciousClient } from "@fluidframework/tinylicious-client";
+import { SharedMap, SharedString } from "fluid-framework";
+import Editor, { DiffEditor, useMonaco, loader } from "@monaco-editor/react";
 
-const javascriptDefault = `/**
-* Problem: Binary Search: Search a sorted array for a target value.
-*/
-
-// Time: O(log n)
-const binarySearch = (arr, target) => {
- return binarySearchHelper(arr, target, 0, arr.length - 1);
-};
-
-const binarySearchHelper = (arr, target, start, end) => {
- if (start > end) {
-   return false;
- }
- let mid = Math.floor((start + end) / 2);
- if (arr[mid] === target) {
-   return mid;
- }
- if (arr[mid] < target) {
-   return binarySearchHelper(arr, target, mid + 1, end);
- }
- if (arr[mid] > target) {
-   return binarySearchHelper(arr, target, start, mid - 1);
- }
-};
-
-const arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-const target = 5;
-console.log(binarySearch(arr, target));
-`;
+const javascriptDefault = ``
 
 const Landing = () => {
+  const getFluidData = async() => {
+    const client = new TinyliciousClient();
+    const containerSchema = {
+      initialObjects: {
+        sharedTimestamp: SharedMap,
+      }
+    }
+
+    let container;
+    const containerId = window.location.hash.substring(1);
+    if (!containerId) {
+      ({ container } = await client.createContainer(containerSchema));
+      const id = await container.attach();
+      window.location.hash = id;
+    } else {
+      ({ container } = await client.getContainer(containerId, containerSchema));
+    }
+    return container.initialObjects;
+  }
+
+  const [fluidSharedObjects, setFluidSharedObjects] = React.useState();
+  React.useEffect(() => {
+    getFluidData()
+    .then(data => setFluidSharedObjects(data));
+  }, []);
+
+  const [localTimestamp, setLocalTimestamp] = React.useState();
+  const [codeText, setCodeText] = React.useState(javascriptDefault);
+  React.useEffect(() => {
+    if (fluidSharedObjects) {
+
+        // Set the value of the localTimestamp state object that will appear in the UI.
+        const { sharedTimestamp } = fluidSharedObjects;
+        const updateLocalTimestamp = () => {
+          setLocalTimestamp({ time: sharedTimestamp.get("time") });
+          setCodeText(sharedTimestamp.get("text"));
+        };
+
+        updateLocalTimestamp();
+
+        // Register handlers.
+        sharedTimestamp.on("valueChanged", updateLocalTimestamp);
+
+        // Delete handler registration when the React App component is dismounted.
+        return () => { sharedTimestamp.off("valueChanged", updateLocalTimestamp) }
+
+    } else {
+        return; // Do nothing because there is no Fluid SharedMap object yet.
+    }
+  }, [fluidSharedObjects])
+
   const [code, setCode] = useState(javascriptDefault);
   const [customInput, setCustomInput] = useState("");
   const [outputDetails, setOutputDetails] = useState(null);
@@ -69,10 +95,13 @@ const Landing = () => {
       handleCompile();
     }
   }, [ctrlPress, enterPress]);
+  
   const onChange = (action, data) => {
     switch (action) {
       case "code": {
-        setCode(data);
+        fluidSharedObjects.sharedTimestamp.set("text", data);
+        setCode(fluidSharedObjects.sharedTimestamp.get("text"))
+        setCodeText(fluidSharedObjects.sharedTimestamp.get("text"))
         break;
       }
       default: {
@@ -85,7 +114,7 @@ const Landing = () => {
     const formData = {
       language_id: language.id,
       // encode source code in base64
-      source_code: btoa(code),
+      source_code: btoa(codeText), // code -> codeText 
       stdin: btoa(customInput),
     };
     const options = {
@@ -201,7 +230,7 @@ const Landing = () => {
   };
 
   return (
-    <>
+    <div>
       <ToastContainer
         position="top-right"
         autoClose={2000}
@@ -248,18 +277,28 @@ const Landing = () => {
         <div className="px-4 py-2">
           <LanguagesDropdown onSelectChange={onSelectChange} />
         </div>
-        <div className="px-4 py-2">
+        {/* <div className="px-4 py-2">
           <ThemeDropdown handleThemeChange={handleThemeChange} theme={theme} />
-        </div>
+        </div> */}
       </div>
       <div className="flex flex-row space-x-4 items-start px-4 py-4">
         <div className="flex flex-col w-full h-full justify-start items-end">
-          <CodeEditorWindow
-            code={code}
+          {/* <CodeEditorWindow
             onChange={onChange}
             language={language?.value}
             theme={theme.value}
+            value={codeText}
+            code={codeText}
+          /> */}
+          <Editor
+            height="90vh"
+            defaultLanguage="javascript"
+            defaultValue={javascriptDefault}
+            value={codeText}
+            onChange={(e) => fluidSharedObjects.sharedTimestamp.set("text", e)}
           />
+          {/* <textarea rows="50" cols="100" 
+          value={codeText} onChange={(e) => fluidSharedObjects.sharedTimestamp.set("text", e.target.value)}/> */}
         </div>
 
         <div className="right-container flex flex-shrink-0 w-[30%] flex-col">
@@ -284,7 +323,19 @@ const Landing = () => {
         </div>
       </div>
       <Footer />
-    </>
+
+      {/* <Editor
+        height="90vh"
+        defaultLanguage="javascript"
+        defaultValue="// some comment"
+      /> */}
+
+      {/* <div className="App">
+        <textarea rows="50" cols="100"
+          value={codeText} onChange={(e) => fluidSharedObjects.sharedTimestamp.set("text", e.target.value)}/>
+      </div> */}
+
+    </div>
   );
 };
 export default Landing;

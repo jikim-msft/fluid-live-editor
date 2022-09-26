@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { TinyliciousClient } from "@fluidframework/tinylicious-client";
+import { SharedMap, SharedString } from "fluid-framework";
 
 import Editor from "@monaco-editor/react";
 
